@@ -1,6 +1,16 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
+import re
+
+def clean_text(text):
+    # Remove HTML tags
+    text = re.sub('<[^<]+?>', '', text) if text else ''
+    # Remove leading/trailing whitespaces
+    text = text.strip()
+    # Replace consecutive whitespaces with a single space
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
 # Streamlit app configuration
 st.title('XML to CSV Converter')
@@ -21,13 +31,13 @@ if uploaded_file is not None:
     for item in root.findall('item'):
         ident = item.get('ident')
         title = item.get('title')
-        question_text = item.find('.//material/mattext').text
+        question_text = clean_text(item.find('.//material/mattext').text)
         
         responses = []
         response_labels = {}
         for response_label in item.findall('.//response_label'):
             response_id = response_label.get('ident')
-            response_text = response_label.find('material/mattext').text
+            response_text = clean_text(response_label.find('material/mattext').text)
             responses.append((response_id, response_text))
             response_labels[response_id] = response_text
         
@@ -45,38 +55,28 @@ if uploaded_file is not None:
                         for varequal in not_element.findall('./varequal'):
                             correct_responses.discard(varequal.text)
         
-        marked_responses = []
-        for response_id, response_text in responses:
-            if response_id in correct_responses:
-                marked_responses.append(f"<CORRECT ANSWER> {response_text}")
-            else:
-                marked_responses.append(f"<INCORRECT ANSWER> {response_text}")
+        correct_answers = [response_labels[response_id] for response_id in correct_responses]
         
-        # Extract feedback
+        # Extract correct and incorrect feedback
+        correct_feedback = ''
+        incorrect_feedback = ''
         feedback_elements = item.findall('.//itemfeedback')
-        feedbacks = []
         for feedback_element in feedback_elements:
-            feedback_text = feedback_element.find('.//flow_mat/material/mattext').text if feedback_element.find('.//flow_mat/material/mattext') is not None else ''
-            if feedback_text:  # Ensure feedback text is not None or empty
-                feedbacks.append(feedback_text)
-        
-        feedback = " | ".join(feedbacks) if feedbacks else ''
+            feedback_ident = feedback_element.get('ident')
+            feedback_text = clean_text(feedback_element.find('.//flow_mat/material/mattext').text) if feedback_element.find('.//flow_mat/material/mattext') is not None else ''
+            if feedback_text:
+                if feedback_ident == 'response_allcorrect':
+                    correct_feedback = feedback_text
+                elif feedback_ident == 'response_onenotcorrect':
+                    incorrect_feedback = feedback_text
         
         question_data = {
             'ident': ident,
             'title': title,
             'question_text': question_text,
-            'response_0': marked_responses[0] if len(marked_responses) > 0 else '',
-            'response_1': marked_responses[1] if len(marked_responses) > 1 else '',
-            'response_2': marked_responses[2] if len(marked_responses) > 2 else '',
-            'response_3': marked_responses[3] if len(marked_responses) > 3 else '',
-            'response_4': marked_responses[4] if len(marked_responses) > 4 else '',
-            'response_5': marked_responses[5] if len(marked_responses) > 5 else '',
-            'response_6': marked_responses[6] if len(marked_responses) > 6 else '',
-            'response_7': marked_responses[7] if len(marked_responses) > 7 else '',
-            'response_8': marked_responses[8] if len(marked_responses) > 8 else '',
-            'response_9': marked_responses[9] if len(marked_responses) > 9 else '',
-            'feedback': feedback
+            'correct_answers': ', '.join(correct_answers),
+            'correct_feedback': correct_feedback,
+            'incorrect_feedback': incorrect_feedback
         }
 
         question_type = None
