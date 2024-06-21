@@ -3,7 +3,6 @@ import xml.etree.ElementTree as ET
 import pandas as pd
 import re
 
-
 def clean_text(text):
     # Remove HTML tags
     text = re.sub("<[^<]+?>", "", text) if text else ""
@@ -12,7 +11,6 @@ def clean_text(text):
     # Replace consecutive whitespaces with a single space
     text = re.sub(r"\s+", " ", text)
     return text
-
 
 # Streamlit app configuration
 st.title("XML to CSV Converter")
@@ -44,30 +42,34 @@ if uploaded_file is not None:
             response_labels[response_id] = response_text
 
         correct_responses = set()
-        incorrect_responses = set()
         for respcondition in item.findall(".//respcondition"):
-            displayfeedback = respcondition.find(".//displayfeedback")
-            if (
-                displayfeedback is not None
-                and displayfeedback.get("linkrefid") == "response_allcorrect"
-            ):
-                conditionvar = respcondition.find(".//conditionvar")
-                if conditionvar is not None:
-                    # Direct varequal elements inside conditionvar
-                    for varequal in conditionvar.findall("./varequal"):
+            conditionvar = respcondition.find(".//conditionvar")
+            if conditionvar is not None:
+                for varequal in conditionvar.findall("./varequal"):
+                    if respcondition.find(".//displayfeedback") is not None and respcondition.find(".//displayfeedback").get("linkrefid") == "response_allcorrect":
                         correct_responses.add(varequal.text)
-                    # Exclude varequal elements inside 'not' elements
-                    for not_element in conditionvar.findall("./not"):
-                        for varequal in not_element.findall("./varequal"):
-                            incorrect_responses.add(varequal.text)
-                            print(incorrect_responses)
 
         correct_answers = [
             response_labels[response_id] for response_id in correct_responses
         ]
-        incorrect_answers = [
-            response_labels[response_id] for response_id in incorrect_responses
-        ]
+        
+        if not correct_answers:  # If no correct answers identified
+            continue  # Skip to next question
+
+        # Identify question type
+        question_type = None
+        for metadata in item.findall(".//qtimetadatafield"):
+            if metadata.find("fieldlabel").text == "QUESTIONTYPE":
+                question_type = metadata.find("fieldentry").text
+                break
+
+        # For single choice questions, all non-correct responses are incorrect answers
+        if question_type == "SINGLE CHOICE QUESTION":
+            incorrect_answers = [response_labels[resp_id] for resp_id in response_labels if resp_id not in correct_responses]
+        else:
+            # For multiple choice questions, identify incorrect responses directly from XML structure
+            incorrect_responses = set(response_labels.keys()) - correct_responses
+            incorrect_answers = [response_labels[resp_id] for resp_id in incorrect_responses]
 
         # Extract correct and incorrect feedback
         correct_feedback = ""
@@ -90,17 +92,11 @@ if uploaded_file is not None:
             "ident": ident,
             "title": title,
             "question_text": question_text,
-            "correct_answers": ", ".join(correct_answers),
-            "incorrect_answers": ", ".join(incorrect_answers),
+            "correct_answers": "| ".join(correct_answers),
+            "incorrect_answers": "| ".join(incorrect_answers),
             "correct_feedback": correct_feedback,
             "incorrect_feedback": incorrect_feedback,
         }
-
-        question_type = None
-        for metadata in item.findall(".//qtimetadatafield"):
-            if metadata.find("fieldlabel").text == "QUESTIONTYPE":
-                question_type = metadata.find("fieldentry").text
-                break
 
         if question_type == "SINGLE CHOICE QUESTION":
             single_choice_questions.append(question_data)
